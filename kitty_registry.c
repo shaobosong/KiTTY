@@ -1,4 +1,42 @@
 #include "kitty_registry.h"
+#include <ctype.h>
+
+#if defined(__MINGW32__) && defined(_WIN32) && !defined(_WIN64)
+/*
+ * Compatibility shim for legacy prebuilt static libraries (bcrypt.a/libregex.a)
+ * that reference old MinGW import variables no longer exported by modern
+ * toolchains.
+ */
+FILE *_imp___iob = NULL;
+static const unsigned short *legacy_pctype = NULL;
+const unsigned short **_imp___pctype = &legacy_pctype;
+static int legacy_mb_cur_max = 1;
+int *_imp____mb_cur_max = &legacy_mb_cur_max;
+
+static void init_legacy_msvcrt_imports(void) __attribute__((constructor));
+static void init_legacy_msvcrt_imports(void)
+{
+	_imp___iob = __acrt_iob_func(0);
+	legacy_pctype = __pctype_func();
+	legacy_mb_cur_max = ___mb_cur_max_func();
+}
+#endif
+
+#if defined(__MINGW32__) && defined(_WIN64)
+/*
+ * x64 compatibility shim for legacy prebuilt static libraries
+ * (bcrypt_64.a/libregex_64.a) expecting old import symbols.
+ */
+FILE *(__cdecl *__imp___iob_func)(unsigned) = __acrt_iob_func;
+static int legacy_mb_cur_max64 = 1;
+int *__imp___mb_cur_max = &legacy_mb_cur_max64;
+
+static void init_legacy_msvcrt_imports64(void) __attribute__((constructor));
+static void init_legacy_msvcrt_imports64(void)
+{
+	legacy_mb_cur_max64 = ___mb_cur_max_func();
+}
+#endif
 
 //static const int cstMaxRegLength = 1024;
 #define cstMaxRegLength 1024

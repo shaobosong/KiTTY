@@ -2987,8 +2987,8 @@ static LRESULT CALLBACK InputCallBackPassword(HWND hwnd, UINT message, WPARAM wP
 }
 
 // Procedure specifique à la editbox multiligne (SHIFT+F8)
-FARPROC lpfnOldEditProc ;
-BOOL FAR PASCAL EditMultilineCallBack(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+WNDPROC lpfnOldEditProc ;
+LRESULT CALLBACK EditMultilineCallBack(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	char buffer[4096], key_name[1024] ;
 	switch (message) {
 		case WM_KEYDOWN:
@@ -3009,7 +3009,7 @@ BOOL FAR PASCAL EditMultilineCallBack(HWND hwnd, UINT message, WPARAM wParam, LP
 				return 0 ;
 				}
 			else
-				return CallWindowProc((WNDPROC)lpfnOldEditProc, hwnd, message, wParam, lParam);
+				return CallWindowProc(lpfnOldEditProc, hwnd, message, wParam, lParam);
 			break;
 		case WM_KEYUP:
 		case WM_CHAR:
@@ -3034,19 +3034,16 @@ BOOL FAR PASCAL EditMultilineCallBack(HWND hwnd, UINT message, WPARAM wParam, LP
 				RegTestOrCreate( HKEY_CURRENT_USER, key_name, "Notes", buffer ) ;
 				}
 			else 
-				return CallWindowProc((WNDPROC)lpfnOldEditProc, hwnd, message, wParam, lParam);	
+				return CallWindowProc(lpfnOldEditProc, hwnd, message, wParam, lParam);	
 			break ;
             	default:
-			return CallWindowProc((WNDPROC)lpfnOldEditProc, hwnd, message, wParam, lParam);
+			return CallWindowProc(lpfnOldEditProc, hwnd, message, wParam, lParam);
 			break;
 		}
 	return TRUE ;
 	}
 
 static int EditReadOnly = 0 ;
-#ifndef GWL_WNDPROC
-#define GWL_WNDPROC GWLP_WNDPROC
-#endif
 static LRESULT CALLBACK InputMultilineCallBack (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	HWND handle;
@@ -3075,9 +3072,9 @@ static LRESULT CALLBACK InputMultilineCallBack (HWND hwnd, UINT message, WPARAM 
 				free(buffer);
 				}
 			
-			FARPROC lpfnSubClassProc = MakeProcInstance( EditMultilineCallBack, hInst );
+			WNDPROC lpfnSubClassProc = EditMultilineCallBack;
 			if( lpfnSubClassProc )
-				lpfnOldEditProc = (FARPROC)SetWindowLong( handle, GWL_WNDPROC, (DWORD)(FARPROC)lpfnSubClassProc );
+				lpfnOldEditProc = (WNDPROC)SetWindowLongPtr( handle, GWLP_WNDPROC, (LONG_PTR)lpfnSubClassProc );
 			}
 			break;
 		case WM_COMMAND:

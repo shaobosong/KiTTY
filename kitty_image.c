@@ -622,8 +622,9 @@ void init_dc_blend(void) {
     //HMODULE * msimg32_dll = LoadLibrary("msimg32.dll");
     HMODULE msimg32_dll = LoadLibrary("msimg32.dll");
     
-    if(msimg32_dll) 
-        pAlphaBlend = GetProcAddress(msimg32_dll, "AlphaBlend");
+    if(msimg32_dll)
+        pAlphaBlend = (BOOL (WINAPI *)(HDC, int, int, int, int, HDC, int, int, int, int, BLENDFUNCTION))
+            GetProcAddress(msimg32_dll, "AlphaBlend");
     
     if(pAlphaBlend) {
     	HDC hdc = GetDC(MainHwnd);

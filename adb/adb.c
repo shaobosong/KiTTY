@@ -31,7 +31,7 @@ typedef struct adb_backend_data {
     //const struct plug_function_table *fn;
     /* the above field _must_ be first in the structure */
 
-    int bufsize;
+    size_t bufsize;
     Socket *s;
     Seat *seat;
     LogContext *logctx;
@@ -44,16 +44,16 @@ typedef struct adb_backend_data {
     Backend backend;
 } Adb;
 
-static void adb_size(void *handle, int width, int height);
+static void adb_size(Backend *be, int width, int height);
 
-static void c_write(Adb *adb, const char *buf, int len)
+static void c_write(Adb *adb, const char *buf, size_t len)
 {
     //int backlog = from_backend(adb->frontend, 0, buf, len);
-    int backlog = win_seat_output_local(adb->seat,false,buf,len);
+    size_t backlog = win_seat_output_local(adb->seat,false,buf,len);
     sk_set_frozen(adb->s, backlog > ADB_MAX_BACKLOG);
 }
 
-static void adb_log(Plug *plug, int type, SockAddr *addr, int port,
+static void adb_log(Plug *plug, PlugLogType type, SockAddr *addr, int port,
                     const char *error_msg, int error_code)
 {
     //Adb adb = (Adb) plug;
@@ -62,12 +62,15 @@ static void adb_log(Plug *plug, int type, SockAddr *addr, int port,
 
     sk_getaddr(addr, addrbuf, lenof(addrbuf));
 
-    if (type == 0)
+    if (type == PLUGLOG_CONNECT_TRYING)
         msg = dupprintf("Connecting to %s port %d", addrbuf, port);
+    else if (type == PLUGLOG_CONNECT_SUCCESS)
+        msg = dupprintf("Connected to %s port %d", addrbuf, port);
     else
         msg = dupprintf("Failed to connect to %s: %s", addrbuf, error_msg);
 
     logevent(adb->logctx, msg);
+    sfree(msg);
 }
 
 static void adb_closing(Plug * plug, const char *error_msg, int error_code,
@@ -171,10 +174,10 @@ static void adb_sent(Plug *plug, size_t bufsize)
  */
 		    
 static const struct PlugVtable Adb_plugvt = {
-        adb_log,
-        adb_closing,
-        adb_receive,
-        adb_sent,
+        .log = adb_log,
+        .closing = adb_closing,
+        .receive = adb_receive,
+        .sent = adb_sent,
     };
 
 /*
@@ -183,19 +186,19 @@ static const char *adb_init(void *frontend_handle, void **backend_handle,
                             const char *host, int port, char **realhost, int nodelay,
                             int keepalive)
 */	
-static const char *adb_init(Seat *seat, Backend **backend_handle,
-                            LogContext *logctx, 
-			    Conf *conf,
-			    const char *host, int port, char **realhost,
-                            bool nodelay, bool keepalive)
+static char *adb_init(const BackendVtable *vt, Seat *seat,
+                      Backend **backend_handle, LogContext *logctx,
+                      Conf *conf, const char *host, int port,
+                      char **realhost, bool nodelay, bool keepalive)
 {
     SockAddr *addr;
     const char *err;
+    char *loghost;
     Adb *adb;
 
     adb = snew(Adb);
     adb->plug.vt = &Adb_plugvt;
-    adb->backend.vt = &adb_backend;
+    adb->backend.vt = vt;
     
     adb->s = NULL;
     *backend_handle = &adb->backend;
@@ -223,7 +226,7 @@ static const char *adb_init(Seat *seat, Backend **backend_handle,
 
     if ((err = sk_addr_error(addr)) != NULL) {
         sk_addr_free(addr);
-        return err;
+        return dupstr(err);
     }
 
     if (port < 0)
@@ -236,21 +239,17 @@ static const char *adb_init(Seat *seat, Backend **backend_handle,
                             &adb->plug, conf);
 	    
     if ((err = sk_socket_error(adb->s)) != NULL)
-        return err;
-    if (*conf_get_str(conf, CONF_loghost)) {
+        return dupstr(err);
+
+    loghost = conf_get_str(conf, CONF_loghost);
+    if (*loghost) {
         char *colon;
 
         sfree(*realhost);
-        *realhost = conf_get_str(conf, CONF_loghost);
-        colon = strrchr(*realhost, ':');
-        if (colon) {
-            /*
-             * FIXME: if we ever update this aspect of ssh.c for
-             * IPv6 literal management, this should change in line
-             * with it.
-             */
+        *realhost = dupstr(loghost);
+        colon = host_strrchr(*realhost, ':');
+        if (colon)
             *colon++ = '\0';
-        }
     }
 
     /* send initial data to adb server */
@@ -293,30 +292,31 @@ static const char *adb_init(Seat *seat, Backend **backend_handle,
     return NULL;
 }
 
-static void adb_free(void *handle)
+static void adb_free(Backend *be)
 {
-    //Adb adb = (Adb) handle;
-    Adb *adb = container_of(handle, Adb, backend);
+    //Adb adb = (Adb) be;
+    Adb *adb = container_of(be, Adb, backend);
 
     if (adb->s)
         sk_close(adb->s);
+    conf_free(adb->conf);
     sfree(adb);
 }
 
 /*
  * Stub routine (we don't have any need to reconfigure this backend).
  */
-static void adb_reconfig(void *handle, Conf *conf)
+static void adb_reconfig(Backend *be, Conf *conf)
 {
 }
 
 /*
  * Called to send data down the adb connection.
  */
-static int adb_send(void *handle, const char *buf, int len)
+static size_t adb_send(Backend *be, const char *buf, size_t len)
 {
-    //Adb adb = (Adb) handle;
-    Adb *adb = container_of(handle, Adb, backend);
+    //Adb adb = (Adb) be;
+    Adb *adb = container_of(be, Adb, backend);
     
     if (adb->s == NULL)
         return 0;
@@ -329,17 +329,17 @@ static int adb_send(void *handle, const char *buf, int len)
 /*
  * Called to query the current socket sendability status.
  */
-static int adb_sendbuffer(void *handle)
+static size_t adb_sendbuffer(Backend *be)
 {
-    //Adb adb = (Adb) handle;
-    Adb *adb = container_of(handle, Adb, backend);
+    //Adb adb = (Adb) be;
+    Adb *adb = container_of(be, Adb, backend);
     return adb->bufsize;
 }
 
 /*
  * Called to set the size of the window
  */
-static void adb_size(void *handle, int width, int height)
+static void adb_size(Backend *be, int width, int height)
 {
     /* Do nothing! */
     return;
@@ -349,7 +349,7 @@ static void adb_size(void *handle, int width, int height)
  * Send adb special codes.
  */
 //static void adb_special(void *handle, Telnet_Special code)
-static void adb_special(void *handle, SessionSpecialCode code)
+static void adb_special(Backend *be, SessionSpecialCode code, int arg)
 {
     /* Do nothing! */
     return;
@@ -359,50 +359,45 @@ static void adb_special(void *handle, SessionSpecialCode code)
  * Return a list of the special codes that make sense in this
  * protocol.
  */
-static const struct telnet_special *adb_get_specials(void *handle)
+static const SessionSpecial *adb_get_specials(Backend *be)
 {
     return NULL;
 }
 
-static int adb_connected(void *handle)
+static bool adb_connected(Backend *be)
 {
-    //Adb adb = (Adb) handle;
-    Adb *adb = container_of(handle, Adb, backend);
+    //Adb adb = (Adb) be;
+    Adb *adb = container_of(be, Adb, backend);
     return adb->s != NULL;
 }
 
-static int adb_sendok(void *handle)
+static bool adb_sendok(Backend *be)
 {
     return 1;
 }
 
-static void adb_unthrottle(void *handle, int backlog)
+static void adb_unthrottle(Backend *be, size_t backlog)
 {
-    //Adb adb = (Adb) handle;
-    Adb *adb = container_of(handle, Adb, backend);
+    //Adb adb = (Adb) be;
+    Adb *adb = container_of(be, Adb, backend);
     sk_set_frozen(adb->s, backlog > ADB_MAX_BACKLOG);
 }
 
-static int adb_ldisc(void *handle, int option)
+static bool adb_ldisc(Backend *be, int option)
 {
     // Don't allow line discipline options
     return 0;
 }
 
-static void adb_provide_ldisc(void *handle, void *ldisc)
+static void adb_provide_ldisc(Backend *be, Ldisc *ldisc)
 {
     /* This is a stub. */
 }
 
-static void adb_provide_logctx(void *handle, void *logctx)
+static int adb_exitcode(Backend *be)
 {
-    /* This is a stub. */
-}
-
-static int adb_exitcode(void *handle)
-{
-    //Adb adb = (Adb) handle;
-    Adb *adb = container_of(handle, Adb, backend);
+    //Adb adb = (Adb) be;
+    Adb *adb = container_of(be, Adb, backend);
     if (adb->s != NULL)
         return -1;                     /* still connected */
     else
@@ -413,7 +408,7 @@ static int adb_exitcode(void *handle)
 /*
  * cfg_info for Adb does nothing at all.
  */
-static int adb_cfg_info(void *handle)
+static int adb_cfg_info(Backend *be)
 {
     return 0;
 }
@@ -431,7 +426,7 @@ const struct BackendVtable adb_backend = {
     .exitcode = adb_exitcode,
     .sendok = adb_sendok,
     .ldisc_option_state = adb_ldisc,
-    .provide_ldisc = adb_provide_logctx,
+    .provide_ldisc = adb_provide_ldisc,
     .unthrottle = adb_unthrottle,
     .cfg_info = adb_cfg_info,
     .id = "adb",

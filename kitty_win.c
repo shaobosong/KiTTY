@@ -1,5 +1,7 @@
 #include "kitty_win.h"
 
+void do_eventlog(const char *st);
+
 // Modifie la transparence
 void SetTransparency( HWND hwnd, int value ) {
 #ifndef MOD_NOTRANSPARENCY

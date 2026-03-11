@@ -7,6 +7,7 @@
 
 #include "ssh.h"
 #include "mpint.h"
+#include "mpunsafe.h"
 #include "sshkeygen.h"
 
 /* ----------------------------------------------------------------------

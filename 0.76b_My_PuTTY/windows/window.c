@@ -443,7 +443,7 @@ int WINAPI Agent_WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show
 
 #endif
 #ifdef MOD_WTS
-typedef enum _WTS_VIRTUAL_CLASS { WTSVirtualClientData, WTSVirtualFileHandle } WTS_VIRTUAL_CLASS; 		// WTS_VIRTUAL_CLASS is not definned in file wtsapi32.h !!!
+// typedef enum _WTS_VIRTUAL_CLASS { WTSVirtualClientData, WTSVirtualFileHandle } WTS_VIRTUAL_CLASS; 		// WTS_VIRTUAL_CLASS is not definned in file wtsapi32.h !!!
 #include <wtsapi32.h>
 #endif
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
@@ -1106,7 +1106,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 			i++ ;
 			conf_set_str( conf, CONF_host, "localhost" ) ;
 			conf_set_int( conf, CONF_port, 23 ) ;
-			conf_set_int( conf, CONF_protocol, I(PROT_TELNET) ) ;
+			conf_set_int( conf, CONF_protocol, PROT_TELNET ) ;
 			conf_set_int( conf, CONF_proxy_type, 5 ) ;
 			conf_set_str( conf, CONF_proxy_host, "proxy" ) ;
 			conf_set_int( conf, CONF_proxy_port, 80 ) ;

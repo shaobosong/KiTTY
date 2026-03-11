@@ -242,7 +242,7 @@ void script_close(ScriptData * scriptdata)
 
 /* send line, called by timer after linedelay
 */
-void script_sendline(void *ctx, long now)
+void script_sendline(void *ctx, unsigned long now)
 {
     ScriptData *scriptdata = (ScriptData *) ctx;
 
@@ -289,7 +289,7 @@ void script_sendline(void *ctx, long now)
 
 /* send char, called by timer after char_delay
 */
-void script_sendchar(void *ctx, long now)
+void script_sendchar(void *ctx, unsigned long now)
 {
     ScriptData *scriptdata = (ScriptData *) ctx;
 
@@ -333,12 +333,18 @@ void script_sendchar(void *ctx, long now)
 
 /* called by timer after wait for prompt timeout
 */
-void script_timeout(void *ctx, long now)
+void script_timeout(void *ctx, unsigned long now)
 {
     ScriptData * scriptdata = (ScriptData *) ctx;
+    unsigned long diff;
 
     /* disable timer seems not to be working, timeout is disabled by keeping track of time */
-    if(abs(now - scriptdata->latest)<50)
+    if (now >= scriptdata->latest)
+      diff = now - scriptdata->latest;
+    else
+      diff = scriptdata->latest - now;
+
+    if(diff < 50)
     {
       script_close(scriptdata);
       logevent(NULL, "script timeout !");

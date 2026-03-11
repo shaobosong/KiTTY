@@ -104,10 +104,10 @@ RC = $(TOOLPATH)windres
 
 # CFLAGS = -Wall -O2 -std=gnu99 -Wvla -D_WINDOWS -DWIN32S_COMPAT \
 
-CFLAGS = -Wall -O2 -std=gnu99 -Wvla -D_WINDOWS -DWIN32S_COMPAT \
+CFLAGS = -Wall -O2 -std=gnu99 -Wvla -fcommon -D_WINDOWS -DWIN32S_COMPAT \
 		-D_NO_OLDNAMES -D__USE_MINGW_ANSI_STDIO=1 -I.././ \
 		-I../charset/ -I../windows/ -I../unix/ -I../crypto/ -I../proxy/ -I../ssh/ -I../terminal/ -I../utils/
-LDFLAGS = -s
+LDFLAGS = -s -mcrtdll=msvcrt
 RCFLAGS = $(RCINC) --define WIN32=1 --define _WIN32=1 --define WINVER=0x0400 \
 		-I.././ -I../charset/ -I../windows/ -I../unix/
 
@@ -2381,36 +2381,53 @@ clean:
 cross:
 	sed -i 's#^typedef enum _WTS_VIRTUAL_CLASS #// typedef enum _WTS_VIRTUAL_CLASS #' window.c
 	sed -i 's/0/999/' version_major.txt
+	git checkout -- ../../mini/mini.a
+	git checkout -- ../../bcrypt/bcrypt.a
+	git checkout -- ../../base64/base64.a
+	git checkout -- ../../blocnote/notepad.a
+	git checkout -- ../../jpeg/libjpeg.a
+	git checkout -- ../../md5/MD5check.a
+	git checkout -- ../../mini/mini.a
+	git checkout -- ../../regex/libregex.a
 	make -e TOOLPATH=/usr/bin/i686-w64-mingw32- -f MAKEFILE.MINGW putty.exe plink.exe pscp.exe psftp.exe pageant.exe puttygen.exe
 	make -e TOOLPATH=/usr/bin/i686-w64-mingw32- -f MAKEFILE.MINGW portable
 	cp putty.exe putty_nocompress.exe
 	upx --best --compress-icons=2 --compress-exports=0 putty.exe putty_portable.exe
-	mv putty.exe /builds/kitty.exe
-	mv putty_portable.exe /builds/kitty_portable.exe
-	mv putty_nocompress.exe /builds/kitty_nocompress.exe
-	mv plink.exe /builds/klink.exe
-	mv pscp.exe /builds/kscp.exe
-	mv psftp.exe /builds/ksftp.exe
-	mv pageant.exe /builds/kageant.exe
-	mv puttygen.exe /builds/kittygen.exe
+	mkdir -p build
+	mv putty.exe build/kitty.exe
+	mv putty_portable.exe build/kitty_portable.exe
+	mv putty_nocompress.exe build/kitty_nocompress.exe
+	mv plink.exe build/klink.exe
+	mv pscp.exe build/kscp.exe
+	mv psftp.exe build/ksftp.exe
+	mv pageant.exe build/kageant.exe
+	mv puttygen.exe build/kittygen.exe
 	rm *.o
 
 cross64:
 	sed -i 's#^typedef enum _WTS_VIRTUAL_CLASS #// typedef enum _WTS_VIRTUAL_CLASS #' window.c
 	sed -i 's/0/999/' version_major.txt
-	make -e TOOLPATH=/usr/bin/x86_64-w64-mingw32- -f MAKEFILE.MINGW putty.exe || /usr/bin/x86_64-w64-mingw32-gcc -o kitty64.exe *.o ../../base64/base64_64.a ../../bcrypt/bcrypt_64.a ../../blocnote/notepad_64.a ../../jpeg/libjpeg_64.a ../../md5/MD5check_64.a ../../mini/mini_64.a ../../regex/libregex_64.a -ladvapi32 -lcomdlg32 -lgdi32 -limm32 -lpsapi -lole32 -lshell32 -luser32 -lwsock32  -lwtsapi32 -mwindows
-	cp kitty64.exe /builds/kitty64_nocompress.exe
 	cp ../../mini/mini_64.a ../../mini/mini.a
 	cp ../../bcrypt/bcrypt_64.a ../../bcrypt/bcrypt.a
 	cp ../../base64/base64_64.a ../../base64/base64.a
+	cp ../../blocnote/notepad_64.a ../../blocnote/notepad.a
+	cp ../../jpeg/libjpeg_64.a ../../jpeg/libjpeg.a
+	cp ../../md5/MD5check_64.a ../../md5/MD5check.a
+	cp ../../mini/mini_64.a ../../mini/mini.a
+	cp ../../regex/libregex_64.a ../../regex/libregex.a
+	make -e TOOLPATH=/usr/bin/x86_64-w64-mingw32- -f MAKEFILE.MINGW putty.exe putty_portable.exe
 	make -e TOOLPATH=/usr/bin/x86_64-w64-mingw32- -f MAKEFILE.MINGW plink.exe pscp.exe psftp.exe pageant.exe puttygen.exe
-	upx --best --compress-icons=2 --compress-exports=0 kitty64.exe
-	mv kitty64.exe /builds/kitty64.exe
-	mv plink.exe /builds/klink64.exe
-	mv pscp.exe /builds/kscp64.exe
-	mv psftp.exe /builds/ksftp64.exe
-	mv pageant.exe /builds/kageant64.exe
-	mv puttygen.exe /builds/kittygen64.exe
+	mkdir -p build
+	cp putty.exe build/kitty64_nocompress.exe
+	cp putty_portable.exe build/kitty64_portable_nocompress.exe
+	upx --best --compress-icons=2 --compress-exports=0 putty.exe putty_portable.exe
+	mv putty.exe build/kitty64.exe
+	mv putty_portable.exe build/kitty64_portable.exe
+	mv plink.exe build/klink64.exe
+	mv pscp.exe build/kscp64.exe
+	mv psftp.exe build/ksftp64.exe
+	mv pageant.exe build/kageant64.exe
+	mv puttygen.exe build/kittygen64.exe
 	rm *.o
 
 9bis: putty.exe putty_portable.exe plink.exe pscp.exe psftp.exe pageant.exe puttygen.exe
