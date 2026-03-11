@@ -47,16 +47,6 @@ int GetPuttyFlag(void) ;
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
 void DisableBackgroundImage( void ) ;
 #endif
-void CheckVersionFromWebSite( HWND hwnd ) ;
-static void checkupdate_handler(union control *ctrl, dlgparam *dlg,
-			  void *data, int event)
-{
-    HWND *hwndp = (HWND *)ctrl->generic.context.p;
-
-    if (event == EVENT_ACTION) {
-	CheckVersionFromWebSite(*hwndp);
-    }
-}
 #endif
 #ifdef MOD_TUTTY
 void dlg_control_enable(union control *ctrl, void *dlg, int enable);
@@ -157,14 +147,6 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, bool has_help,
 		if( GetConfigBoxHeight() > 7 ) c->generic.column = 0 ; else 
 	    c->generic.column = 1;
 	}
-#ifndef FLJ
-	if( !get_param("PUTTY") ) {
-		c = ctrl_pushbutton(s, "Check Update", NO_SHORTCUT, HELPCTX(no_help),
-			    checkupdate_handler, P(hwndp));
-		if( GetConfigBoxHeight() > 7 ) c->generic.column = 0 ; else
-		c->generic.column = 2;
-	}
-#endif
 #else
 	if (has_help) {
 	    c = ctrl_pushbutton(s, "Help", 'h', HELPCTX(no_help),
