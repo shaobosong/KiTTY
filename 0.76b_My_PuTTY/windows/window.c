@@ -54,6 +54,7 @@
 #define IDM_NEWSESS   0x0020
 #define IDM_DUPSESS   0x0030
 #define IDM_RESTART   0x0040
+#define IDM_RESTART_AUTO (IDM_RESTART | 0x1)
 #define IDM_RECONF    0x0050
 #define IDM_CLRSB     0x0060
 #define IDM_RESET     0x0070
@@ -451,6 +452,8 @@ int WINAPI Agent_WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show
 #endif
 #ifdef MOD_RECONNECT
 static time_t last_reconnect = 0;
+static unsigned reconnect_attempts = 0;
+static bool reconnect_limit_logged = false;
 void SetConnBreakIcon( HWND hwnd ) ;
 static void close_session(void *ignored_context);
 #endif
@@ -640,6 +643,138 @@ static WinGuiSeat wgs = { .seat.vt = &win_seat_vt,
 Terminal* GetTerminal() { return term ; }
 void do_eventlog( const char * st ) { lp_eventlog(&wgs.logpolicy,st); }
 #endif
+
+#ifdef MOD_RECONNECT
+static int get_reconnect_retry_count(void)
+{
+    int value = conf_get_int(conf, CONF_reconnect_retry_count);
+
+    if (value < 0) {
+        value = 0;
+        conf_set_int(conf, CONF_reconnect_retry_count, value);
+    }
+
+    return value;
+}
+
+static int get_reconnect_retry_interval(void)
+{
+    int value = conf_get_int(conf, CONF_reconnect_retry_interval);
+
+    if (value < 1) {
+        value = 1;
+        conf_set_int(conf, CONF_reconnect_retry_interval, value);
+    }
+
+    return value;
+}
+
+static UINT get_reconnect_timer_interval(void)
+{
+    int seconds = get_reconnect_retry_interval();
+
+    if ((unsigned int)seconds > UINT_MAX / 1000U)
+        return UINT_MAX;
+
+    return (UINT)seconds * 1000U;
+}
+
+static void reset_reconnect_state(void)
+{
+    reconnect_attempts = 0;
+    reconnect_limit_logged = false;
+}
+
+static bool reconnect_retry_limit_reached(void)
+{
+    int retry_count = get_reconnect_retry_count();
+
+    return retry_count > 0 && reconnect_attempts >= (unsigned)retry_count;
+}
+
+static bool reconnect_retryable_network_error(const char *message)
+{
+    static const char *const retryable_errors[] = {
+        "Host is down",
+        "No route to host",
+        "Network is down",
+        "Network is unreachable",
+    };
+    static const char prefix[] = "Network error: ";
+    size_t i;
+
+    if (!message)
+        return false;
+
+    if (!strncmp(message, prefix, lenof(prefix) - 1))
+        message += lenof(prefix) - 1;
+
+    for (i = 0; i < lenof(retryable_errors); i++) {
+        if (!strcmp(message, retryable_errors[i]))
+            return true;
+    }
+
+    return false;
+}
+
+static void print_reconnect_status_to_terminal(
+    const char *detail, bool reconnect_scheduled)
+{
+    char *message;
+    int retry_interval;
+    int retry_count;
+    unsigned next_attempt;
+
+    if (!term || !detail || !*detail)
+        return;
+
+    retry_interval = get_reconnect_retry_interval();
+    retry_count = get_reconnect_retry_count();
+    next_attempt = reconnect_attempts + 1;
+
+    if (reconnect_scheduled) {
+        if (retry_count > 0) {
+            message = dupprintf(
+                "[KiTTY] %s\r\n"
+                "[KiTTY] Reconnect attempt %u/%d in %d second%s.\r\n",
+                detail, next_attempt, retry_count, retry_interval,
+                retry_interval == 1 ? "" : "s");
+        } else {
+            message = dupprintf(
+                "[KiTTY] %s\r\n"
+                "[KiTTY] Reconnect attempt %u in %d second%s.\r\n",
+                detail, next_attempt, retry_interval,
+                retry_interval == 1 ? "" : "s");
+        }
+    } else {
+        message = dupprintf(
+            "[KiTTY] %s\r\n"
+            "[KiTTY] Reconnect retry limit reached, leaving session inactive.\r\n",
+            detail);
+    }
+
+    term_data(term, false, message, strlen(message));
+    term_update(term);
+    sfree(message);
+}
+
+static bool schedule_auto_reconnect(HWND hwnd, const char *message)
+{
+    if (reconnect_retry_limit_reached()) {
+        if (!reconnect_limit_logged) {
+            lp_eventlog(&wgs.logpolicy,
+                        "Reconnect retry limit reached, leaving session inactive.");
+            reconnect_limit_logged = true;
+        }
+        return false;
+    }
+
+    reconnect_limit_logged = false;
+    lp_eventlog(&wgs.logpolicy, message);
+    SetTimer(hwnd, TIMER_RECONNECT, get_reconnect_timer_interval(), NULL);
+    return true;
+}
+#endif
 			  
 static void start_backend(void)
 {
@@ -669,11 +804,17 @@ static void start_backend(void)
                          conf_get_bool(conf, CONF_tcp_keepalives));
     if (error) {
 #ifdef MOD_RECONNECT
+        bool retryable_network_error =
+            reconnect_retryable_network_error(error);
+        bool auto_reconnect =
+            GetAutoreconnectFlag() &&
+            conf_get_int(conf, CONF_failure_reconnect) &&
+            (is_backend_first_connected || retryable_network_error);
 	char *str = dupprintf("%s Error", appname);
         char *msg = dupprintf("Unable to open connection to\n%s\n%s",
                               conf_dest(conf), error);
         sfree(error);
-	if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
+	if( auto_reconnect ) {
 	    lp_eventlog(&wgs.logpolicy, msg) ; 
         } else {
 	    if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_failure_reconnect) ) {
@@ -690,16 +831,20 @@ static void start_backend(void)
 	    }
         }
 	sfree(str);
-	sfree(msg);
 	SetSSHConnected(0) ;
 	queue_toplevel_callback(close_session, NULL);
 	session_closed = true;
-	if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
+	if( auto_reconnect ) {
+	    bool reconnect_scheduled;
+
 	    SetConnBreakIcon(wgs.term_hwnd) ;
-	    lp_eventlog(&wgs.logpolicy, "Unable to connect, trying to reconnect...") ; 
-	    SetTimer(wgs.term_hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ; 
+	    reconnect_scheduled = schedule_auto_reconnect(
+		wgs.term_hwnd, "Unable to connect, trying to reconnect...");
+	    print_reconnect_status_to_terminal(msg, reconnect_scheduled);
+	    sfree(msg);
 	    return ;
 	}
+	sfree(msg);
 	if( is_backend_first_connected ) {
 	    return ;
 	}
@@ -739,6 +884,9 @@ static void start_backend(void)
     }
 
     session_closed = false;
+#ifdef MOD_RECONNECT
+    reset_reconnect_state();
+#endif
 #ifdef MOD_RUTTY
 /* rutty: */
     script_init(&scriptdata, conf);
@@ -793,6 +941,7 @@ void RestartSession( void ) {
 		SetSSHConnected(0) ; 
 		queue_toplevel_callback(close_session, NULL) ; backend = NULL ; 
 	}
+	reset_reconnect_state();
 	if( GetAutoreconnectFlag() ) {
 		lp_eventlog(&wgs.logpolicy, "User request session restart..." ) ;
 	} else {
@@ -2278,21 +2427,29 @@ static void wintw_set_focus_reporting_mode(TermWin *tw, bool activate)
 static void win_seat_connection_fatal(Seat *seat, const char *msg)
 {
 #ifdef MOD_RECONNECT
-	if( GetAutoreconnectFlag() && is_backend_first_connected ) {
+	if( GetAutoreconnectFlag() &&
+	    (is_backend_first_connected ||
+	     (conf_get_int(conf,CONF_failure_reconnect) &&
+	      reconnect_retryable_network_error(msg))) ) {
 		SetConnBreakIcon(wgs.term_hwnd) ;
 		SetSSHConnected(0);
 		queue_toplevel_callback(close_session, NULL);
 		session_closed = true;
-		ReadInitScript(NULL);
+		if( is_backend_first_connected ) {
+			ReadInitScript(NULL);
+		}
 	
     debug_logevent( "%s Fatal Error: %s", appname,msg ) ;
     show_mouseptr(true);
 	
 		if( conf_get_int(conf,CONF_failure_reconnect) ) {
+			bool reconnect_scheduled;
+
 			queue_toplevel_callback(close_session, NULL);
 			session_closed = true;
-			lp_eventlog(&wgs.logpolicy, "Lost connection, trying to reconnect...") ;
-			SetTimer(wgs.term_hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ;
+			reconnect_scheduled = schedule_auto_reconnect(
+				wgs.term_hwnd, "Lost connection, trying to reconnect...");
+			print_reconnect_status_to_terminal(msg, reconnect_scheduled);
 		}
 	} else {
     char *title = dupprintf("%s Fatal Error", appname);
@@ -3653,8 +3810,8 @@ else if((UINT_PTR)wParam == TIMER_ANTIIDLE) {  // Envoi de l'anti-idle
 #ifdef MOD_RECONNECT
 	if(!backend||!is_backend_connected) { // On essaie de se reconnecter en cas de problème de connexion
 		if ( conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
-			lp_eventlog(&wgs.logpolicy, "No connection, trying to reconnect...") ; 
-			SetTimer(hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ; 
+			schedule_auto_reconnect(hwnd,
+						"No connection, trying to reconnect...") ;
 			}
 			break;
 		}
@@ -3684,8 +3841,10 @@ else if((UINT_PTR)wParam == TIMER_BLINKTRAYICON) {  // Clignotement de l'icone d
 #ifdef MOD_RECONNECT
 else if((UINT_PTR)wParam == TIMER_RECONNECT) {
 	if( !backend ) { 
+		reconnect_attempts++;
+		reconnect_limit_logged = false;
 		lp_eventlog(&wgs.logpolicy, "No backend connection, reconnecting...") ;
-		PostMessage( hwnd, WM_COMMAND, IDM_RESTART, 0 ) ; 
+		PostMessage( hwnd, WM_COMMAND, IDM_RESTART_AUTO, 0 ) ; 
 	}
 	KillTimer( hwnd, TIMER_RECONNECT ) ;
 }
@@ -3965,6 +4124,11 @@ free(cmd);
           }
 	  case IDM_RESTART:
             if (!backend) {
+#ifdef MOD_RECONNECT
+                if ((wParam & 0xF) == 0) {
+                    reset_reconnect_state();
+                }
+#endif
                 lp_eventlog(&wgs.logpolicy, "----- Session restarted -----");
 		term_pwron(term, false);
 #ifdef MOD_PERSO
@@ -3978,8 +4142,8 @@ free(cmd);
 		//if( (!backend || !is_backend_connected) && GetAutoreconnectFlag() ) {
 		if( !backend ) {
 		    if ( conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
-			SetTimer(hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ; 
-			lp_eventlog(&wgs.logpolicy, "Unable to connect, trying to reconnect...") ; 
+			schedule_auto_reconnect(hwnd,
+						"Unable to connect, trying to reconnect...") ;
 		    }
 		    break;
 		}
@@ -4611,7 +4775,7 @@ free(cmd);
       case WM_RBUTTONDOWN:
 #ifdef MOD_RECONNECT
 	if( ((!backend) || (!is_backend_connected)) && GetAutoreconnectFlag() && is_backend_first_connected ) { // trying to reconnect
-		PostMessage( hwnd, WM_COMMAND, IDM_RESTART, 0 ) ; 
+		PostMessage( hwnd, WM_COMMAND, IDM_RESTART_AUTO, 0 ) ; 
 		lp_eventlog(&wgs.logpolicy, "No connection on mouse click, trying to reconnect...") ;
 		break ; 
 	} 
@@ -4630,7 +4794,7 @@ free(cmd);
 #ifdef MOD_RECONNECT
 		else { 
 			if( is_backend_first_connected && GetAutoreconnectFlag() ) {
-				SendMessage( hwnd, WM_COMMAND, IDM_RESTART, 0 ) ; 
+				SendMessage( hwnd, WM_COMMAND, IDM_RESTART_AUTO, 0 ) ; 
 				lp_eventlog(&wgs.logpolicy, "No connection on mouse click, trying to reconnect...") ;
 			} 
 		}
@@ -5580,7 +5744,7 @@ free(cmd);
 	//if( !back && GetAutoreconnectFlag() && is_backend_first_connected && (WM_COMMAND==WM_KEYDOWN) && !(GetKeyState(VK_CONTROL)&0x8000) && !(GetKeyState(VK_SHIFT)&0x8000) && !(GetKeyState(VK_MENU)&0x8000) && (wParam!=VK_TAB) && (wParam!=VK_LEFT) && (wParam!=VK_UP) && (wParam!=VK_RIGHT) && (wParam!=VK_DOWN) && !((wParam>=VK_F1)&&(wParam<=VK_F16)) ) { 
         if( (!backend || !is_backend_connected) && (message==WM_KEYDOWN) && GetAutoreconnectFlag() && is_backend_first_connected && (wParam!=VK_CONTROL) && (wParam!=VK_SHIFT) && (wParam!=VK_MENU) && (wParam!=VK_TAB) && (wParam!=VK_LEFT) && (wParam!=VK_UP) && (wParam!=VK_RIGHT) && (wParam!=VK_DOWN) && !((wParam>=VK_F1)&&(wParam<=VK_F16)) ) { 
  		lp_eventlog(&wgs.logpolicy, "No connection on key pressed, trying to reconnect...") ; 
-		PostMessage( hwnd, WM_COMMAND, IDM_RESTART, 0 ) ;  
+		PostMessage( hwnd, WM_COMMAND, IDM_RESTART_AUTO, 0 ) ;  
 		break ;
 	}
 #endif
@@ -5969,8 +6133,8 @@ if( (GetKeyState(VK_MENU)&0x8000) && (wParam==VK_SPACE) ) {
 					start_backend();
 					SetTimer(hwnd, TIMER_INIT, init_delay, NULL) ;
 					*/
-					lp_eventlog(&wgs.logpolicy, "Unable to connect on wakeup, trying to reconnect...") ; 
-					SetTimer(hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ;
+					schedule_auto_reconnect(hwnd,
+						"Unable to connect on wakeup, trying to reconnect...") ;
 				}
 				break;
 			case PBT_APMSUSPEND:

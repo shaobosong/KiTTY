@@ -38,6 +38,28 @@ void debug_logevent( const char *fmt, ... ) ;
 #include "kitty_proxy.h"
 #endif
 
+#ifdef MOD_RECONNECT
+static int conf_reconnect_retry_count(Conf *conf)
+{
+    int value = conf_get_int(conf, CONF_reconnect_retry_count);
+    return value < 0 ? 0 : value;
+}
+
+static int conf_reconnect_retry_interval(Conf *conf)
+{
+    int value = conf_get_int(conf, CONF_reconnect_retry_interval);
+    return value < 1 ? 1 : value;
+}
+
+static void sanitise_reconnect_conf(Conf *conf)
+{
+    conf_set_int(conf, CONF_reconnect_retry_count,
+                 conf_reconnect_retry_count(conf));
+    conf_set_int(conf, CONF_reconnect_retry_interval,
+                 conf_reconnect_retry_interval(conf));
+}
+#endif
+
 /* The cipher order given here is the default order. */
 static const struct keyvalwhere ciphernames[] = {
     { "aes",        CIPHER_AES,             -1, -1 },
@@ -861,6 +883,10 @@ void save_open_settings(settings_w *sesskey, Conf *conf)
 #ifdef MOD_RECONNECT
     write_setting_i(sesskey, "WakeupReconnect", conf_get_int(conf,CONF_wakeup_reconnect) );
     write_setting_i(sesskey, "FailureReconnect", conf_get_int(conf,CONF_failure_reconnect) );
+    write_setting_i(sesskey, "ReconnectRetryCount",
+                    conf_reconnect_retry_count(conf));
+    write_setting_i(sesskey, "ReconnectRetryInterval",
+                    conf_reconnect_retry_interval(conf));
 #endif
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
 	if( GetBackgroundImageFlag() ) {
@@ -1552,6 +1578,11 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
 #ifdef MOD_RECONNECT
     gppi(sesskey, "WakeupReconnect", 0, conf, CONF_wakeup_reconnect );
     gppi(sesskey, "FailureReconnect", 0, conf, CONF_failure_reconnect );
+    gppi(sesskey, "ReconnectRetryCount", 0, conf,
+         CONF_reconnect_retry_count);
+    gppi(sesskey, "ReconnectRetryInterval", 5, conf,
+         CONF_reconnect_retry_interval);
+    sanitise_reconnect_conf(conf);
 #endif
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
     gppi(sesskey, "BgOpacity", 50, conf, CONF_bg_opacity );

@@ -3578,6 +3578,12 @@ if( !GetPuttyFlag() ) {
 		s = ctrl_getset(b, "Connection", "reconnect", "Reconnect options");
 		ctrl_checkbox(s, "Attempt to reconnect on system wakeup", NO_SHORTCUT, HELPCTX(no_help), conf_checkbox_handler, I(CONF_wakeup_reconnect)) ;
 		ctrl_checkbox(s, "Attempt to reconnect on connection failure", NO_SHORTCUT, HELPCTX(no_help), conf_checkbox_handler, I(CONF_failure_reconnect)) ;
+		ctrl_editbox(s, "Retry count (0 = unlimited)", NO_SHORTCUT, 20,
+			     HELPCTX(no_help), conf_editbox_handler,
+			     I(CONF_reconnect_retry_count), I(-1));
+		ctrl_editbox(s, "Retry interval (seconds)", NO_SHORTCUT, 20,
+			     HELPCTX(no_help), conf_editbox_handler,
+			     I(CONF_reconnect_retry_interval), I(-1));
 	}
 #endif
 

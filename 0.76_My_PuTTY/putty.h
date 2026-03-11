@@ -1877,6 +1877,8 @@ NORETURN void cleanup_exit(int);
 /* #ifdef MOD_RECONNECT */ \
     X(INT, NONE, wakeup_reconnect) \
     X(INT, NONE, failure_reconnect) \
+    X(INT, NONE, reconnect_retry_count) \
+    X(INT, NONE, reconnect_retry_interval) \
 /* #endif */ \
 /* #ifdef MOD_HYPERLINK */ \
     /* 						\

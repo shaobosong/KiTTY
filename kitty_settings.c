@@ -360,6 +360,10 @@ void save_open_settings_forced(char *filename, Conf *conf) {
 #ifdef MOD_RECONNECT
     write_setting_i_forced(sesskey, "WakeupReconnect", conf_get_int(conf,CONF_wakeup_reconnect) );
     write_setting_i_forced(sesskey, "FailureReconnect", conf_get_int(conf,CONF_failure_reconnect) );
+    write_setting_i_forced(sesskey, "ReconnectRetryCount",
+                           conf_reconnect_retry_count(conf));
+    write_setting_i_forced(sesskey, "ReconnectRetryInterval",
+                           conf_reconnect_retry_interval(conf));
 #endif
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
 	if( GetBackgroundImageFlag() ) {
@@ -1014,6 +1018,11 @@ void load_open_settings_forced(char *filename, Conf *conf) {
 #ifdef MOD_RECONNECT
     gppi_forced(sesskey, "WakeupReconnect", 0, conf, CONF_wakeup_reconnect );
     gppi_forced(sesskey, "FailureReconnect", 0, conf, CONF_failure_reconnect );
+    gppi_forced(sesskey, "ReconnectRetryCount", 0, conf,
+                CONF_reconnect_retry_count );
+    gppi_forced(sesskey, "ReconnectRetryInterval", 5, conf,
+                CONF_reconnect_retry_interval );
+    sanitise_reconnect_conf(conf);
 #endif
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
     gppi_forced(sesskey, "BgOpacity", 50, conf, CONF_bg_opacity );
