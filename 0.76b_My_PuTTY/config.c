@@ -319,8 +319,26 @@ static void config_port_handler(union control *ctrl, dlgparam *dlg,
 
 struct hostport {
     union control *host, *port, *protradio, *protlist;
+    bool host_visible;
     bool mid_refresh;
 };
+
+static void config_host_visibility_handler(union control *ctrl, dlgparam *dlg,
+                                           void *data, int event)
+{
+    struct hostport *hp = (struct hostport *)ctrl->generic.context.p;
+    (void)data;
+
+    if (event == EVENT_REFRESH) {
+        dlg_checkbox_set(ctrl, dlg, hp->host_visible);
+    } else if (event == EVENT_VALCHANGE) {
+        hp->host_visible = dlg_checkbox_get(ctrl, dlg);
+    } else {
+        return;
+    }
+
+    dlg_editbox_set_password(hp->host, dlg, !hp->host_visible);
+}
 
 /*
  * Shared handler for protocol radio-button and drop-list controls.
@@ -2569,16 +2587,20 @@ void setup_config_box(struct controlbox *b, bool midsession,
 	c = ctrl_editbox(s, HOST_BOX_TITLE, 'n', 100,
 			 HELPCTX(session_hostname),
 			 config_host_handler, I(0), I(0));
+	c->editbox.password = true;
 	c->generic.column = 0;
 	hp->host = c;
-	c = ctrl_editbox(s, PORT_BOX_TITLE, 'p', 100,
-			 HELPCTX(session_hostname),
-			 config_port_handler, I(0), I(0));
-	c->generic.column = 1;
-	hp->port = c;
-	ctrl_columns(s, 1, 100);
+		c = ctrl_editbox(s, PORT_BOX_TITLE, 'p', 100,
+				 HELPCTX(session_hostname),
+				 config_port_handler, I(0), I(0));
+		c->generic.column = 1;
+		hp->port = c;
+		ctrl_columns(s, 1, 100);
+		ctrl_checkbox(s, "Show host/IP", 'w',
+			      HELPCTX(session_hostname),
+			      config_host_visibility_handler, P(hp));
 
-        c = ctrl_text(s, "Connection type:", HELPCTX(session_hostname));
+	        c = ctrl_text(s, "Connection type:", HELPCTX(session_hostname));
         ctrl_columns(s, 2, 62, 38);
         c = ctrl_radiobuttons(s, NULL, NO_SHORTCUT, 3,
 			      HELPCTX(session_hostname),

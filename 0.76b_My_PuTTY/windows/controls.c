@@ -2231,6 +2231,17 @@ void dlg_editbox_set(union control *ctrl, dlgparam *dp, char const *text)
     SetDlgItemText(dp->hwnd, c->base_id+1, text);
 }
 
+void dlg_editbox_set_password(union control *ctrl, dlgparam *dp, bool password)
+{
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    HWND hw;
+
+    assert(c && c->ctrl->generic.type == CTRL_EDITBOX);
+    hw = GetDlgItem(dp->hwnd, c->base_id+1);
+    SendMessage(hw, EM_SETPASSWORDCHAR, password ? '*' : 0, 0);
+    InvalidateRect(hw, NULL, true);
+}
+
 char *dlg_editbox_get(union control *ctrl, dlgparam *dp)
 {
     struct winctrl *c = dlg_findbyctrl(dp, ctrl);

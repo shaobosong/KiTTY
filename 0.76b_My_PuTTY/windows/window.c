@@ -7836,7 +7836,7 @@ if( !get_param("PUTTY") && conf_get_int(conf, CONF_disablealtgr) ) {
 #ifdef MOD_PERSO
 /* Creer un titre de fenetre a partir d'un schema donne
 	%%f: le folder auquel apprtient le session
-	%%h: le hostname
+	%%h: nom de la session (masque l'hote)
 	%%i: le pid du process
 	%%p: le port
 	%%P: le protocole
@@ -7847,28 +7847,41 @@ if( !get_param("PUTTY") && conf_get_int(conf, CONF_disablealtgr) ) {
 Ex: %%P://%%u@%%h:%%p
 Ex: %%f / %%s
 */
+static const char *title_session_name(void)
+{
+    const char *sessionname = conf_get_str(conf, CONF_sessionname);
+
+    if (sessionname && *sessionname)
+        return sessionname;
+
+    return appname;
+}
+
+static bool title_has_suffix(const char *title, const char *suffix)
+{
+    size_t title_len = strlen(title);
+    size_t suffix_len = strlen(suffix);
+
+    return title_len >= suffix_len &&
+        !strcmp(title + title_len - suffix_len, suffix);
+}
+
 char * make_title( char * fmt, const char * title ) {
     int p ;
     char * res = NULL ;
+    const char *session_title = title_session_name();
     res = (char *)malloc( strlen(fmt)+strlen(title)+1 ) ;
     sprintf( res, fmt, title ) ;
 
     while( (p=poss( "%%s", res)) > 0 ) {
         del( res, p, 3 ) ;
-        res = (char*)realloc( res, strlen(res)+strlen(conf_get_str(conf,CONF_sessionname))+1 ) ;
-        if( strlen(conf_get_str(conf,CONF_sessionname))>0 )  {
-            insert( res, conf_get_str(conf,CONF_sessionname), p ) ; 
-        }
+        res = (char*)realloc( res, strlen(res)+strlen(session_title)+1 ) ;
+        insert( res, session_title, p ) ;
     }
     while( (p=poss( "%%h", res)) > 0 ) { 
         del( res, p, 3 ) ;
-        if( conf_get_int(conf,CONF_protocol) == PROT_SERIAL ) {
-            res = (char*)realloc( res, strlen(res)+strlen(conf_get_str(conf,CONF_serline))+1 ) ;
-            insert( res, conf_get_str(conf,CONF_serline), p ) ;
-        } else {
-            res = (char*)realloc( res, strlen(res)+strlen(conf_get_str(conf,CONF_host))+1 ) ;
-            insert( res, conf_get_str(conf,CONF_host), p ) ;
-        }
+        res = (char*)realloc( res, strlen(res)+strlen(session_title)+1 ) ;
+        insert( res, session_title, p ) ;
     }
     while( (p=poss( "%%u", res)) > 0 ) {
         del( res, p ,3 ) ;
@@ -7973,13 +7986,23 @@ void set_title_internal(TermWin *tw, const char *title) {
     window_name = dupstr(title);
     if (conf_get_bool(conf, CONF_win_name_always) || !IsIconic(wgs.term_hwnd))
         SetWindowText(wgs.term_hwnd, title);
+    if (GetVisibleFlag() == VISIBLE_TRAY) {
+        strncpy(TrayIcone.szTip, title, lenof(TrayIcone.szTip) - 1);
+        TrayIcone.szTip[lenof(TrayIcone.szTip) - 1] = '\0';
+        Shell_NotifyIcon(NIM_MODIFY, &TrayIcone);
+    }
 }
 static void wintw_set_title(TermWin *tw, const char *title_in) {
 	char *buffer=NULL, *fmt=NULL, *title=NULL ;
 
 	if( title_in==NULL ) { return ; }
-	
-	title = (char*)malloc( strlen(title_in)+1 ) ; strcpy( title, title_in ) ;
+
+	title = dupstr(title_session_name());
+
+    if (title_in && title_has_suffix(title_in, " (inactive)")) {
+        title = (char *)realloc(title, strlen(title) + strlen(" (inactive)") + 1);
+        strcat(title, " (inactive)");
+    }
 	
 	//if( (title[0]=='_')&&(title[1]=='_') ) { // Remote command ==> moved in terminal.c
 	//	if( ManageLocalCmd( MainHwnd, title+2 ) ) { free( title ) ; return ; }
@@ -7987,40 +8010,23 @@ static void wintw_set_title(TermWin *tw, const char *title_in) {
 	
 	if( !GetTitleBarFlag() ) { set_title_internal( tw, title ) ; free( title ) ; return ; }
 	
-	if( strstr( title, " (PROTECTED)")==( title+strlen(title)-12 ) ) {
+	if( title_has_suffix(title, " (PROTECTED)") ) {
 		title[strlen(title)-12]='\0' ; 
 	}
 	
-	fmt = (char*)malloc( 3 ) ; strcpy( fmt,"%s" ) ;
 #if (defined MOD_BACKGROUNDIMAGE) && (!defined FLJ)
-	buffer = (char*) malloc( strlen( title ) + strlen( conf_get_str(conf,CONF_host)) + strlen( conf_get_filename(conf,CONF_bg_image_filename)->path ) + 40 ) ; 
+	buffer = (char*) malloc( strlen( title ) + strlen( conf_get_filename(conf,CONF_bg_image_filename)->path ) + 40 ) ;
 	if( GetBackgroundImageFlag() && GetImageViewerFlag() && (!PuttyFlag) ) { sprintf( buffer, "%s", conf_get_filename(conf,CONF_bg_image_filename)->path ) ; }
 	else 
 #else
-	buffer = (char*) malloc( strlen( title ) + strlen( conf_get_str(conf,CONF_host)) + 40 ) ; 
+	buffer = (char*) malloc( strlen( title ) + 40 ) ;
 #endif
+	strcpy(buffer, title);
 	if( GetSizeFlag() && (!IsZoomed( MainHwnd )) ) {
-		if( strlen( title ) > 0 ) {
-			if( title[strlen(title)-1] == ']' ) {
-				free( buffer ) ;
-				buffer = make_title( "%s", title ) ;
-			} else {
-				fmt = (char*)realloc( fmt, 5+16+1+16+1+1 ) ;
-				sprintf( fmt, "%%s [%dx%d]", conf_get_int(conf,CONF_height), conf_get_int(conf,CONF_width)) ;
-				free(buffer) ;
-				buffer = make_title( fmt, title ) ;
-			}
-		} else {
-			buffer=(char*)realloc( buffer, strlen(conf_get_str(conf,CONF_host))+2+16+1+16+3+strlen(appname)+1 ) ;
-			sprintf( buffer, "%s [%dx%d] - %s", conf_get_str(conf,CONF_host), conf_get_int(conf,CONF_height), conf_get_int(conf,CONF_width), appname ) ;
-		}
-	} else {
-		if( strlen( title ) > 0 ) { 
-			free(buffer) ;
-			buffer = make_title( "%s", title ) ; 
-		} else {
-			buffer=(char*)realloc( buffer, strlen(conf_get_str(conf,CONF_host))+3+strlen(appname)+1 ) ;
-			sprintf( buffer, "%s - %s", conf_get_str(conf,CONF_host), appname ) ;
+		if( !title[0] || title[strlen(title)-1] != ']' ) {
+			buffer = (char*)realloc(buffer, strlen(buffer) + 16 + 1 + 16 + 3);
+			sprintf(buffer + strlen(buffer), " [%dx%d]",
+			        conf_get_int(conf,CONF_height), conf_get_int(conf,CONF_width));
 		}
 	}
 	if( GetProtectFlag() ) if( strstr(buffer, " (PROTECTED)")==NULL ) { 
@@ -8049,7 +8055,12 @@ static void wintw_set_title(TermWin *tw, const char *title_in) {
 
 static void wintw_set_icon_title(TermWin *tw, const char *title_in)
 {
-	char * title = make_title( "%s", title_in ) ;
+	char * title = dupstr(title_session_name()) ;
+
+    if (title_in && title_has_suffix(title_in, " (inactive)")) {
+        title = (char *)realloc(title, strlen(title) + strlen(" (inactive)") + 1);
+        strcat(title, " (inactive)");
+    }
 
     sfree(icon_name);
     icon_name = snewn(1 + strlen(title), char);

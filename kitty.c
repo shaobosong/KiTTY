@@ -1876,7 +1876,8 @@ int ManageToTray( HWND hwnd ) {
 	if( ResShell ) {
 		GetWindowText( hwnd, buffer, 4096 ) ;
 		//buffer[strlen(buffer)-21] = '\0' ;
-		strcpy( TrayIcone.szTip, buffer ) ;
+		strncpy( TrayIcone.szTip, buffer, lenof(TrayIcone.szTip) - 1 ) ;
+		TrayIcone.szTip[lenof(TrayIcone.szTip) - 1] = '\0' ;
 		ResShell = Shell_NotifyIcon(NIM_MODIFY, &TrayIcone);
 		if (IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_HIDE);
 		VisibleFlag = VISIBLE_TRAY ;

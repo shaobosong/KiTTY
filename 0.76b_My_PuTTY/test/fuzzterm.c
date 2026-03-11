@@ -135,6 +135,7 @@ int dlg_radiobutton_get(union control *ctrl, dlgparam *dp) { return 0; }
 void dlg_checkbox_set(union control *ctrl, dlgparam *dp, bool checked) { }
 bool dlg_checkbox_get(union control *ctrl, dlgparam *dp) { return false; }
 void dlg_editbox_set(union control *ctrl, dlgparam *dp, char const *text) { }
+void dlg_editbox_set_password(union control *ctrl, dlgparam *dp, bool password) { }
 char *dlg_editbox_get(union control *ctrl, dlgparam *dp)
 { return dupstr("moo"); }
 void dlg_listbox_clear(union control *ctrl, dlgparam *dp) { }
