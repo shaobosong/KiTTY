@@ -225,7 +225,6 @@ BEGIN
     LTEXT           "Message",IDC_BAN,45,55,188,8
     DEFPUSHBUTTON "OK", IDOK, 189, 69, 50, 14
     PUSHBUTTON "Licence", IDA_LICENCE, 18, 69, 50, 14
-    PUSHBUTTON "Check &Update", IDA_WEB, 75, 69, 50, 14
     PUSHBUTTON "&Donate", IDA_DON, 132, 69, 50, 14
 END
 

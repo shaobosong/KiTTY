@@ -3981,6 +3981,14 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 		}
 #endif
 	switch (wParam & ~0xF) {       /* low 4 bits reserved to Windows */
+#ifdef MOD_PERSO
+          case SC_MINIMIZE:
+            if (message == WM_SYSCOMMAND && GetVisibleFlag() == VISIBLE_YES) {
+                SendMessage(hwnd, WM_COMMAND, IDM_TOTRAY, 0);
+                return 0;
+            }
+            break;
+#endif
           case SC_VSCROLL:
           case SC_HSCROLL:
             if (message == WM_SYSCOMMAND) {
@@ -4706,8 +4714,9 @@ free(cmd);
 				else return 0 ;
 			break ;
 			case WM_RBUTTONUP:
-			case WM_LBUTTONUP: 
 				DisplaySystemTrayMenu( hwnd ) ;
+			break ;
+			case WM_LBUTTONUP:
 			break ;
 		}
 	break ;

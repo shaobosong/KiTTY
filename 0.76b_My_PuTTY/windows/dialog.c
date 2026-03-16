@@ -438,20 +438,6 @@ static INT_PTR CALLBACK AboutProc(HWND hwnd, UINT msg,
 	    SetActiveWindow(hwnd);
 	    return 0;
 
-	  case IDA_WEB:
-	    /* Load web browser */
-	    CheckVersionFromWebSite( hwnd ) ;
-/*	  {
-		char buffer[1024]="", vers[1024]="" ;
-		int i ;
-		strcpy( vers, BuildVersionTime ) ;
-		for( i = 0 ; i < strlen( vers ) ; i ++ ) {
-			if( !(((vers[i]>='0')&&(vers[i]<='9'))||(vers[i]=='.')) ) { vers[i] = '\0' ; break ; }
-			}
-		sprintf( buffer, "https://www.9bis.net/kitty/check_update.php?version=%s", vers ) ;
-		ShellExecute(hwnd, "open", buffer, 0, 0, SW_SHOWDEFAULT);
-	  }*/
-	    return 0;
 	  case IDA_DON:
 	    /* Load web browser */
 	  {	char buffer[1024]="";
