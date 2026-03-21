@@ -634,8 +634,6 @@ void SaveDumpConfig( FILE *fp, Conf * conf ) {
 	/* Reconnect Options */
 	fprintf( fp, "wakeup_reconnect=%d\n",		conf_get_int(conf,CONF_wakeup_reconnect) ) ;
 	fprintf( fp, "failure_reconnect=%d\n",		conf_get_int(conf,CONF_failure_reconnect) ) ;
-	fprintf( fp, "reconnect_retry_count=%d\n",	conf_get_int(conf,CONF_reconnect_retry_count) ) ;
-	fprintf( fp, "reconnect_retry_interval=%d\n",	conf_get_int(conf,CONF_reconnect_retry_interval) ) ;
 #endif
 #ifdef MOD_HYPERLINK
 	/* Hyperlink Options */
