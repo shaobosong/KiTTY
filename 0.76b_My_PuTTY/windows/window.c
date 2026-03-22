@@ -640,6 +640,27 @@ static WinGuiSeat wgs = { .seat.vt = &win_seat_vt,
 Terminal* GetTerminal() { return term ; }
 void do_eventlog( const char * st ) { lp_eventlog(&wgs.logpolicy,st); }
 #endif
+
+#ifdef MOD_RECONNECT
+static bool reconnect_retry_allowed(void)
+{
+    return GetAutoreconnectFlag() &&
+        conf_get_int(conf, CONF_failure_reconnect);
+}
+
+static bool reconnect_failure_handling_enabled(void)
+{
+    return GetAutoreconnectFlag() &&
+        (is_backend_first_connected ||
+         conf_get_int(conf, CONF_failure_reconnect));
+}
+
+static bool wakeup_reconnect_allowed(void)
+{
+    return GetAutoreconnectFlag() &&
+        conf_get_int(conf, CONF_wakeup_reconnect);
+}
+#endif
 			  
 static void start_backend(void)
 {
@@ -673,7 +694,7 @@ static void start_backend(void)
         char *msg = dupprintf("Unable to open connection to\n%s\n%s",
                               conf_dest(conf), error);
         sfree(error);
-	if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
+	if( reconnect_retry_allowed() ) {
 	    lp_eventlog(&wgs.logpolicy, msg) ; 
         } else {
 	    if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_failure_reconnect) ) {
@@ -694,7 +715,7 @@ static void start_backend(void)
 	SetSSHConnected(0) ;
 	queue_toplevel_callback(close_session, NULL);
 	session_closed = true;
-	if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
+	if( reconnect_retry_allowed() ) {
 	    SetConnBreakIcon(wgs.term_hwnd) ;
 	    lp_eventlog(&wgs.logpolicy, "Unable to connect, trying to reconnect...") ; 
 	    SetTimer(wgs.term_hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ; 
@@ -2278,7 +2299,7 @@ static void wintw_set_focus_reporting_mode(TermWin *tw, bool activate)
 static void win_seat_connection_fatal(Seat *seat, const char *msg)
 {
 #ifdef MOD_RECONNECT
-	if( GetAutoreconnectFlag() && is_backend_first_connected ) {
+	if( reconnect_failure_handling_enabled() ) {
 		SetConnBreakIcon(wgs.term_hwnd) ;
 		SetSSHConnected(0);
 		queue_toplevel_callback(close_session, NULL);
@@ -3652,7 +3673,7 @@ else if((UINT_PTR)wParam == TIMER_ANTIIDLE) {  // Envoi de l'anti-idle
 		}
 #ifdef MOD_RECONNECT
 	if(!backend||!is_backend_connected) { // On essaie de se reconnecter en cas de problème de connexion
-		if ( conf_get_int(conf,CONF_failure_reconnect) && is_backend_first_connected ) {
+		if ( reconnect_retry_allowed() ) {
 			lp_eventlog(&wgs.logpolicy, "No connection, trying to reconnect...") ; 
 			SetTimer(hwnd, TIMER_RECONNECT, GetReconnectDelay()*1000, NULL) ; 
 			}
@@ -5957,7 +5978,7 @@ if( (GetKeyState(VK_MENU)&0x8000) && (wParam==VK_SPACE) ) {
 	return 0;
 #ifdef MOD_RECONNECT
       case WM_POWERBROADCAST:
-	if( GetAutoreconnectFlag() && conf_get_int(conf,CONF_wakeup_reconnect) && is_backend_first_connected) {
+	if( wakeup_reconnect_allowed() ) {
 		switch(wParam) {
 			case PBT_APMRESUMESUSPEND:
 			case PBT_APMRESUMEAUTOMATIC:

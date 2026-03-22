@@ -13,6 +13,7 @@
 
 typedef struct HandleSocket {
     HANDLE send_H, recv_H, stderr_H;
+    HANDLE child_process;
     struct handle *send_h, *recv_h, *stderr_h;
 
     /*
@@ -44,6 +45,35 @@ typedef struct HandleSocket {
 
     Socket sock;
 } HandleSocket;
+
+#define HANDLE_SOCKET_PROXY_EXIT_WAIT_MS 200
+#define HANDLE_SOCKET_PROXY_KILL_WAIT_MS 5000
+
+static void close_handle_if_valid(HANDLE *hp)
+{
+    if (*hp && *hp != INVALID_HANDLE_VALUE) {
+        CloseHandle(*hp);
+        *hp = NULL;
+    }
+}
+
+static void handle_socket_cleanup_proxy_process(HandleSocket *hs)
+{
+    DWORD wait_result;
+
+    if (!hs->child_process || hs->child_process == INVALID_HANDLE_VALUE)
+        return;
+
+    wait_result = WaitForSingleObject(
+        hs->child_process, HANDLE_SOCKET_PROXY_EXIT_WAIT_MS);
+    if (wait_result == WAIT_TIMEOUT) {
+        TerminateProcess(hs->child_process, 1);
+        WaitForSingleObject(
+            hs->child_process, HANDLE_SOCKET_PROXY_KILL_WAIT_MS);
+    }
+
+    close_handle_if_valid(&hs->child_process);
+}
 
 static size_t handle_gotdata(
     struct handle *h, const void *data, size_t len, int err)
@@ -115,6 +145,7 @@ static Plug *sk_handle_plug(Socket *s, Plug *p)
 static void sk_handle_close(Socket *s)
 {
     HandleSocket *hs = container_of(s, HandleSocket, sock);
+    HANDLE send_H = hs->send_H, recv_H = hs->recv_H, stderr_H = hs->stderr_H;
 
     if (hs->defer_close) {
         hs->deferred_close = true;
@@ -123,9 +154,16 @@ static void sk_handle_close(Socket *s)
 
     handle_free(hs->send_h);
     handle_free(hs->recv_h);
-    CloseHandle(hs->send_H);
-    if (hs->recv_H != hs->send_H)
-        CloseHandle(hs->recv_H);
+    if (hs->stderr_h)
+        handle_free(hs->stderr_h);
+
+    close_handle_if_valid(&hs->send_H);
+    if (recv_H != send_H)
+        close_handle_if_valid(&hs->recv_H);
+    if (stderr_H != send_H && stderr_H != recv_H)
+        close_handle_if_valid(&hs->stderr_H);
+
+    handle_socket_cleanup_proxy_process(hs);
     bufchain_clear(&hs->inputdata);
 
     delete_callbacks_for_context(hs);
@@ -315,7 +353,7 @@ static const SocketVtable HandleSocket_sockvt = {
 };
 
 Socket *make_handle_socket(HANDLE send_H, HANDLE recv_H, HANDLE stderr_H,
-                           Plug *plug, bool overlapped)
+                           HANDLE child_process, Plug *plug, bool overlapped)
 {
     HandleSocket *hs;
     int flags = (overlapped ? HANDLE_FLAG_OVERLAPPED : 0);
@@ -333,9 +371,11 @@ Socket *make_handle_socket(HANDLE send_H, HANDLE recv_H, HANDLE stderr_H,
     hs->send_H = send_H;
     hs->send_h = handle_output_new(hs->send_H, handle_sentdata, hs, flags);
     hs->stderr_H = stderr_H;
+    hs->stderr_h = NULL;
     if (hs->stderr_H)
         hs->stderr_h = handle_input_new(hs->stderr_H, handle_stderr,
                                         hs, flags);
+    hs->child_process = child_process;
 
     hs->defer_close = hs->deferred_close = false;
 

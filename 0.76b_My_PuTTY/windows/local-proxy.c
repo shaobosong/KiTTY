@@ -88,10 +88,24 @@ Socket *platform_new_connection(SockAddr *addr, const char *hostname,
     si.hStdInput = cmd_from_us;
     si.hStdOutput = cmd_to_us;
     si.hStdError = cmd_err_to_us;
-    CreateProcess(NULL, cmd, NULL, NULL, true,
-		  CREATE_NO_WINDOW | NORMAL_PRIORITY_CLASS,
-		  NULL, NULL, &si, &pi);
-    CloseHandle(pi.hProcess);
+    if (!CreateProcess(NULL, cmd, NULL, NULL, true,
+                       CREATE_NO_WINDOW | NORMAL_PRIORITY_CLASS,
+                       NULL, NULL, &si, &pi)) {
+        DWORD err = GetLastError();
+
+        sfree(cmd);
+        CloseHandle(cmd_from_us);
+        CloseHandle(cmd_to_us);
+        if (cmd_err_to_us != NULL)
+            CloseHandle(cmd_err_to_us);
+        CloseHandle(us_to_cmd);
+        CloseHandle(us_from_cmd);
+        if (us_from_cmd_err != NULL)
+            CloseHandle(us_from_cmd_err);
+
+        return new_error_socket_fmt(
+            plug, "Unable to start proxy command: %s", win_strerror(err));
+    }
     CloseHandle(pi.hThread);
 
     sfree(cmd);
@@ -103,5 +117,5 @@ Socket *platform_new_connection(SockAddr *addr, const char *hostname,
         CloseHandle(cmd_err_to_us);
 
     return make_handle_socket(us_to_cmd, us_from_cmd, us_from_cmd_err,
-                              plug, false);
+                              pi.hProcess, plug, false);
 }
